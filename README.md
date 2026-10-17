@@ -106,8 +106,9 @@ without the owner's account.
 
 ## Limitations
 
-- One node locally and in the cloud: the drain experiment shows pods rescheduling onto the server node,
-  not a multi-node failover.
+- One OpenSearch replica on node-local storage: draining its node takes search down until the node is
+  back (`docs/POSTMORTEM.md`, experiment 2). On the one-VM cloud environment there is no second node to
+  fail over to anyway; a block volume or a three-node OpenSearch is the fix when there is.
 - Argo CD itself is installed by the bootstrap, not by Argo CD.
 - Chart versions in Application manifests are bumped by hand.
 - The forecast image is 3.7 GB and the search image 4.7 GB (training stacks inside); slimmer serving
