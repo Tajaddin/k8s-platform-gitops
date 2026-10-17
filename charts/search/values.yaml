@@ -1,0 +1,81 @@
+host: search.localtest.me
+tls:
+  enabled: true
+  issuer: platform-issuer
+
+images:
+  api: { repository: hss/api, tag: local, pullPolicy: IfNotPresent }
+  ui: { repository: hss/ui, tag: local, pullPolicy: IfNotPresent }
+  opensearch: { repository: opensearchproject/opensearch, tag: 2.19.1 }
+  redis: { repository: redis, tag: 7-alpine }
+
+api:
+  replicas: 2
+  resources:
+    requests: { cpu: 500m, memory: 1536Mi }
+    limits: { cpu: "2", memory: 3Gi }
+  env:
+    HSS_RATE_LIMIT: 600/minute
+    HSS_CORS_ORIGINS: https://search.localtest.me
+    HSS_FORWARDED_ALLOW_IPS: "*"
+    HF_HUB_OFFLINE: "1"
+    OMP_NUM_THREADS: "2"
+  # Argo Rollouts canary: traffic weights through the ingress-nginx traffic router, each step gated by analysis.
+  canary:
+    steps:
+      - setWeight: 10
+      - pause: { duration: 60s }
+      - analysis: { templates: [{ templateName: search-api-health }] }
+      - setWeight: 50
+      - pause: { duration: 60s }
+      - analysis: { templates: [{ templateName: search-api-health }] }
+    analysis:
+      maxErrorRate: 0.02   # 5xx share over the analysis window
+      maxP99Seconds: 0.4
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    cpuUtilization: 60
+    requestsPerSecondPerPod: 15
+    scaleUpStabilizationSeconds: 0
+    scaleDownStabilizationSeconds: 120
+  pdb:
+    minAvailable: 1
+
+ui:
+  replicas: 2
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+opensearch:
+  javaOpts: "-Xms1g -Xmx1g"
+  storage: 10Gi
+  storageClass: ""
+  resources:
+    requests: { cpu: 500m, memory: 2Gi }
+    limits: { memory: 3Gi }
+
+redis:
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 384Mi }
+
+# Where the prepared catalog, vocabulary, attributes and cached embeddings come from. hostPath for the
+# local cluster and the single VM; a PVC filled by a job elsewhere.
+data:
+  preparedHostPath: /mnt/hss-prepared
+  modelsHostPath: /mnt/hss-models
+  indexer:
+    enabled: true   # a post-sync Job that runs `hss index` once the cluster is up (idempotent: recreates the index)
+
+secrets:
+  # dev-only: when sealed is false the chart writes a plain Secret from these values. For a real environment set
+  # sealed: true and commit a SealedSecret named <release>-api-secrets produced by scripts/seal.sh.
+  sealed: false
+  adminKey: local-admin-key
+
+alerts:
+  enabled: true
+  sloP99Seconds: 0.2

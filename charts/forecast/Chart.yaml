@@ -1,0 +1,6 @@
+apiVersion: v2
+name: forecast
+description: The demand-forecast API (P6) with its MLflow registry - a training job registers the model, the API serves it, HPA, PDB, network policies, monitors
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

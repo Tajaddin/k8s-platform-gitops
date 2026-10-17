@@ -1,0 +1,6 @@
+apiVersion: v2
+name: search
+description: The hybrid search service (P8) the way a platform team runs it - OpenSearch, Redis, the API as an Argo Rollout with a canary, the UI, HPA on traffic, network policies, PDBs, monitors and alerts
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

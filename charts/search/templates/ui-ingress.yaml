@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-ui
+  labels:
+    app.kubernetes.io/name: search-ui
+    {{- include "search.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/name: search-ui }
+  ports:
+    - { name: http, port: 80, targetPort: 80, protocol: TCP }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-ui
+  labels:
+    app.kubernetes.io/name: search-ui
+    {{- include "search.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.ui.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: search-ui }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: search-ui }
+    spec:
+      containers:
+        - name: ui
+          image: {{ include "search.image" .Values.images.ui }}
+          imagePullPolicy: {{ .Values.images.ui.pullPolicy }}
+          # The nginx in the image proxies /api/ to the host "api"; in the cluster that name is the stable Service.
+          env:
+            - { name: DNS_RESOLVER, value: "" }
+          ports: [{ name: http, containerPort: 80, protocol: TCP }]
+          resources: {{ toYaml .Values.ui.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            periodSeconds: 10
+---
+# "api" inside the namespace resolves to the stable API service, which is what the UI image's nginx expects.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  type: ExternalName
+  externalName: search-api.{{ .Release.Namespace }}.svc.cluster.local
+  ports:
+    - { name: http, port: 8000, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: search-ui
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: search-ui }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+      ports: [{ protocol: TCP, port: 80 }]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: search-api }
+      ports: [{ protocol: TCP, port: 8000 }]
+---
+# Two ingresses: the UI on /, the API on /api (rewritten), both on one host with one certificate. The API
+# ingress is the one Argo Rollouts manages weights on.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: search-ui
+  annotations:
+    {{- if .Values.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.tls.issuer }}
+    {{- end }}
+spec:
+  ingressClassName: nginx
+  {{- if .Values.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.host }}]
+      secretName: search-tls
+  {{- end }}
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: search-ui, port: { number: 80 } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: search-api
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- if .Values.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.tls.issuer }}
+    {{- end }}
+spec:
+  ingressClassName: nginx
+  {{- if .Values.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.host }}]
+      secretName: search-tls
+  {{- end }}
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service: { name: search-api, port: { number: 8000 } }

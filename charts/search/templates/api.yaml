@@ -1,0 +1,173 @@
+{{- if not .Values.secrets.sealed }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-api-secrets
+  annotations:
+    platform/warning: "dev-only plain secret; real environments set secrets.sealed=true and commit a SealedSecret"
+type: Opaque
+stringData:
+  HSS_ADMIN_KEY: {{ .Values.secrets.adminKey | quote }}
+---
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: search-api-config
+data:
+  HSS_OPENSEARCH_URL: http://opensearch:9200
+  HSS_REDIS_URL: redis://redis:6379/0
+  HSS_PREPARED_DIR: /data/prepared
+  HSS_MODELS_DIR: /data/models
+  HSS_REPORTS_DIR: /app/reports
+  {{- range $k, $v := .Values.api.env }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-api
+  labels:
+    app.kubernetes.io/name: search-api
+    {{- include "search.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/name: search-api }
+  ports:
+    - { name: http, port: 8000, targetPort: 8000, protocol: TCP }
+---
+# The canary service: Argo Rollouts points it at the new ReplicaSet and shifts ingress weight to it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: search-api-canary
+  labels:
+    app.kubernetes.io/name: search-api
+    {{- include "search.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/name: search-api }
+  ports:
+    - { name: http, port: 8000, targetPort: 8000, protocol: TCP }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: search-api
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    app.kubernetes.io/name: search-api
+    {{- include "search.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: { app.kubernetes.io/name: search-api }
+  strategy:
+    canary:
+      stableService: search-api
+      canaryService: search-api-canary
+      trafficRouting:
+        nginx:
+          stableIngress: search-api
+      steps: {{ toYaml .Values.api.canary.steps | nindent 8 }}
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: search-api }
+      annotations:
+        prometheus.io/scrape: "true"
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 999, fsGroup: 999 }
+      containers:
+        - name: api
+          image: {{ include "search.image" .Values.images.api }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          envFrom:
+            - configMapRef: { name: search-api-config }
+            - secretRef: { name: {{ .Release.Name }}-api-secrets }
+          ports: [{ name: http, containerPort: 8000, protocol: TCP }]
+          resources: {{ toYaml .Values.api.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 180
+            periodSeconds: 30
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts:
+            - { name: prepared, mountPath: /data/prepared, readOnly: true }
+            - { name: models, mountPath: /data/models }
+      volumes:
+        - name: prepared
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-prepared, readOnly: true }
+        - name: models
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-models }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: search-api
+spec:
+  minAvailable: {{ .Values.api.pdb.minAvailable }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: search-api }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: search-api
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: search-api }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: search-ui }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports: [{ protocol: TCP, port: 8000 }]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: opensearch }
+      ports: [{ protocol: TCP, port: 9200 }]
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: redis }
+      ports: [{ protocol: TCP, port: 6379 }]
+{{- if .Values.api.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: search-api
+spec:
+  scaleTargetRef:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    name: search-api
+  minReplicas: {{ .Values.api.hpa.minReplicas }}
+  maxReplicas: {{ .Values.api.hpa.maxReplicas }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.api.hpa.scaleUpStabilizationSeconds }}
+      policies:
+        - { type: Pods, value: 2, periodSeconds: 30 }
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.api.hpa.scaleDownStabilizationSeconds }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.api.hpa.cpuUtilization }} }
+    - type: Pods
+      pods:
+        metric: { name: http_requests_per_second }
+        target: { type: AverageValue, averageValue: {{ .Values.api.hpa.requestsPerSecondPerPod | quote }} }
+{{- end }}

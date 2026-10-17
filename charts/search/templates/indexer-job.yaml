@@ -1,0 +1,59 @@
+{{- if .Values.data.indexer.enabled }}
+# Builds the OpenSearch index from the prepared data (embeddings cached on the host) in sync wave 1, before
+# the API; the completed Job stays for its logs. Idempotent: the index is recreated when the Job is replaced.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: search-indexer
+  labels: { app.kubernetes.io/name: search-indexer }
+  annotations:
+    # Not a PostSync hook: the API's readiness depends on this job's output, and a hook only runs after the
+    # sync is healthy, which never happens on a fresh cluster. A wave-1 Job runs before the wave-2 API and
+    # Argo waits for it to complete; Replace recreates it when its spec changes (Jobs are immutable).
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: search-indexer }
+    spec:
+      restartPolicy: OnFailure
+      securityContext: { runAsNonRoot: true, runAsUser: 999, fsGroup: 999 }
+      initContainers:
+        - name: wait-for-opensearch
+          image: curlimages/curl:8.12.1
+          command: ["sh", "-c", "until curl -fsS http://opensearch:9200/_cluster/health; do sleep 5; done"]
+      containers:
+        - name: indexer
+          image: {{ include "search.image" .Values.images.api }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          command: ["hss", "index"]
+          envFrom:
+            - configMapRef: { name: search-api-config }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { memory: 3Gi }
+          volumeMounts:
+            - { name: prepared, mountPath: /data/prepared, readOnly: true }
+            - { name: models, mountPath: /data/models }
+      volumes:
+        - name: prepared
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-prepared, readOnly: true }
+        - name: models
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-models }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: search-indexer
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: search-indexer }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: opensearch }
+      ports: [{ protocol: TCP, port: 9200 }]
+{{- end }}

@@ -1,0 +1,80 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: search-api
+  labels: { app.kubernetes.io/name: search-api }
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: search-api }
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: search-api-health
+spec:
+  metrics:
+    - name: error-rate
+      interval: 30s
+      count: 3
+      successCondition: result[0] <= {{ .Values.api.canary.analysis.maxErrorRate }}
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://kps-prometheus.monitoring.svc:9090
+          query: |
+            sum(rate(http_request_duration_seconds_count{namespace="{{ .Release.Namespace }}",status=~"5.."}[2m]))
+              / clamp_min(sum(rate(http_request_duration_seconds_count{namespace="{{ .Release.Namespace }}"}[2m])), 1e-9)
+    - name: p99
+      interval: 30s
+      count: 3
+      successCondition: result[0] <= {{ .Values.api.canary.analysis.maxP99Seconds }}
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://kps-prometheus.monitoring.svc:9090
+          query: |
+            histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{namespace="{{ .Release.Namespace }}",route="/search"}[2m])))
+{{- if .Values.alerts.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: search
+spec:
+  groups:
+    - name: search
+      rules:
+        - alert: SearchApiDown
+          expr: sum(up{namespace="{{ .Release.Namespace }}",container="api"}) == 0 or absent(up{namespace="{{ .Release.Namespace }}",container="api"})
+          for: 2m
+          labels: { severity: critical }
+          annotations: { summary: "no search API pod is being scraped" }
+        - alert: SearchSloP99Breached
+          expr: histogram_quantile(0.99, sum by (le) (rate(search_latency_seconds_bucket{namespace="{{ .Release.Namespace }}",ranker="hybrid",cached="false"}[10m]))) > {{ .Values.alerts.sloP99Seconds }}
+          for: 10m
+          labels: { severity: critical }
+          annotations: { summary: "hybrid search p99 above the SLO" }
+        - alert: SearchErrorRateHigh
+          expr: sum(rate(search_errors_total{namespace="{{ .Release.Namespace }}"}[5m])) / clamp_min(sum(rate(search_requests_total{namespace="{{ .Release.Namespace }}"}[5m])), 1e-9) > 0.02
+          for: 5m
+          labels: { severity: critical }
+          annotations: { summary: "more than 2% of searches fail" }
+        - alert: SearchHpaAtMax
+          expr: kube_horizontalpodautoscaler_status_current_replicas{namespace="{{ .Release.Namespace }}",horizontalpodautoscaler="search-api"} >= kube_horizontalpodautoscaler_spec_max_replicas{namespace="{{ .Release.Namespace }}",horizontalpodautoscaler="search-api"}
+          for: 10m
+          labels: { severity: warning }
+          annotations: { summary: "the search API is at its maximum replica count" }
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: search-dashboard
+  labels: { grafana_dashboard: "1" }
+data:
+  search.json: |
+    {{- .Files.Get "dashboards/search.json" | nindent 4 }}

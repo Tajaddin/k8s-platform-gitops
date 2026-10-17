@@ -1,0 +1,179 @@
+{{- if not .Values.secrets.sealed }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-api-secrets
+  annotations:
+    platform/warning: "dev-only plain secret; real environments set secrets.sealed=true and commit a SealedSecret"
+type: Opaque
+stringData:
+  DFP_API_KEYS: {{ .Values.secrets.apiKeys | quote }}
+---
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: forecast-api-config
+data:
+  MLFLOW_TRACKING_URI: http://mlflow:5000
+  {{- range $k, $v := .Values.api.env }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: forecast-api
+  labels:
+    app.kubernetes.io/name: forecast-api
+spec:
+  selector: { app.kubernetes.io/name: forecast-api }
+  ports:
+    - { name: http, port: 8000, targetPort: 8000, protocol: TCP }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forecast-api
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    app.kubernetes.io/name: forecast-api
+spec:
+  replicas: {{ .Values.api.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app.kubernetes.io/name: forecast-api }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: forecast-api }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 999, fsGroup: 999 }
+      containers:
+        - name: api
+          image: {{ .Values.images.api.repository }}:{{ .Values.images.api.tag }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          envFrom:
+            - configMapRef: { name: forecast-api-config }
+            - secretRef: { name: {{ .Release.Name }}-api-secrets }
+          ports: [{ name: http, containerPort: 8000, protocol: TCP }]
+          resources: {{ toYaml .Values.api.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /metrics, port: 8000 }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: forecast-api
+spec:
+  minAvailable: {{ .Values.api.pdb.minAvailable }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: forecast-api }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: forecast-api
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: forecast-api }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports: [{ protocol: TCP, port: 8000 }]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: mlflow }
+      ports: [{ protocol: TCP, port: 5000 }]
+{{- if .Values.api.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: forecast-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: forecast-api
+  minReplicas: {{ .Values.api.hpa.minReplicas }}
+  maxReplicas: {{ .Values.api.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.api.hpa.cpuUtilization }} }
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: forecast-api
+  annotations:
+    {{- if .Values.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.tls.issuer }}
+    {{- end }}
+spec:
+  ingressClassName: nginx
+  {{- if .Values.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.host }}]
+      secretName: forecast-tls
+  {{- end }}
+  rules:
+    - host: {{ .Values.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: forecast-api, port: { number: 8000 } }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: forecast-api
+  labels:
+    app.kubernetes.io/name: forecast-api
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: forecast-api }
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+{{- if .Values.alerts.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: forecast
+spec:
+  groups:
+    - name: forecast
+      rules:
+        - alert: ForecastModelNotLoaded
+          expr: max(model_loaded{namespace="{{ .Release.Namespace }}"}) == 0
+          for: 5m
+          labels: { severity: critical }
+          annotations: { summary: "the forecast API has no production model loaded" }
+        - alert: ForecastApiDown
+          expr: absent(up{namespace="{{ .Release.Namespace }}",container="api"}) or sum(up{namespace="{{ .Release.Namespace }}",container="api"}) == 0
+          for: 2m
+          labels: { severity: critical }
+          annotations: { summary: "no forecast API pod is being scraped" }
+{{- end }}

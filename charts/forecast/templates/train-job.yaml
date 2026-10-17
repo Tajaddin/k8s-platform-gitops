@@ -1,0 +1,59 @@
+{{- if .Values.trainJob.enabled }}
+# Registers the champion model in the MLflow registry and points the production alias at it, then the API
+# pods pick it up on their next reload. Runs after each sync; the image carries the data and the backtest.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: forecast-train
+  labels: { app.kubernetes.io/name: forecast-train }
+  annotations:
+    # Not a PostSync hook: the API's readiness depends on this job's output, and a hook only runs after the
+    # sync is healthy, which never happens on a fresh cluster. A wave-1 Job runs before the wave-2 API and
+    # Argo waits for it to complete; Replace recreates it when its spec changes (Jobs are immutable).
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: forecast-train }
+    spec:
+      restartPolicy: OnFailure
+      securityContext: { runAsNonRoot: true, runAsUser: 999, fsGroup: 999 }
+      initContainers:
+        - name: wait-for-mlflow
+          image: curlimages/curl:8.12.1
+          command: ["sh", "-c", "until curl -fsS http://mlflow:5000/health; do sleep 5; done"]
+      containers:
+        - name: train
+          image: {{ .Values.images.api.repository }}:{{ .Values.images.api.tag }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          command: ["sh", "-c", "dfp train && for i in $(seq 1 20); do curl -fsS -X POST http://forecast-api:8000/model/reload -H \"X-API-Key: $DFP_RELOAD_KEY\" && break; sleep 5; done"]
+          env:
+            - { name: MLFLOW_TRACKING_URI, value: http://mlflow:5000 }
+            - { name: PYTHONUTF8, value: "1" }
+            - name: DFP_RELOAD_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Release.Name }}-api-secrets, key: DFP_API_KEYS }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { memory: 3Gi }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: forecast-train
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: forecast-train }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: mlflow }
+      ports: [{ protocol: TCP, port: 5000 }]
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: forecast-api }
+      ports: [{ protocol: TCP, port: 8000 }]
+{{- end }}

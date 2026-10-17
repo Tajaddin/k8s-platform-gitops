@@ -1,0 +1,37 @@
+# The prepared catalog and the model cache are pre-provisioned on the node (k3d volume locally, the data
+# upload on the VM). Pods may not mount hostPath volumes under the baseline pod-security level, so the
+# paths are exposed as static PersistentVolumes and claimed by name; the PV object is cluster-scoped and
+# not subject to pod security, the pod only sees a PVC.
+{{- range $name, $path := dict "prepared" .Values.data.preparedHostPath "models" .Values.data.modelsHostPath }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ $.Release.Namespace }}-{{ $.Release.Name }}-{{ $name }}
+  labels:
+    app.kubernetes.io/part-of: {{ $.Release.Name }}
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ $.Release.Namespace }}
+    name: {{ $.Release.Name }}-{{ $name }}
+  hostPath:
+    path: {{ $path }}
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $.Release.Name }}-{{ $name }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: ""
+  volumeName: {{ $.Release.Namespace }}-{{ $.Release.Name }}-{{ $name }}
+  resources:
+    requests:
+      storage: 1Gi
+{{- end }}

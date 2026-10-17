@@ -1,0 +1,9 @@
+host: forecast.localtest.me
+images:
+  api: { repository: dfp/api, tag: local, pullPolicy: Never }
+mlflow:
+  storage: 2Gi
+  storageClass: local-path
+secrets:
+  sealed: false
+  apiKeys: local-analyst-key

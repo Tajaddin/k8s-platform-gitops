@@ -1,0 +1,42 @@
+host: forecast.localtest.me
+tls:
+  enabled: true
+  issuer: platform-issuer
+
+images:
+  api: { repository: dfp/api, tag: local, pullPolicy: IfNotPresent }
+  mlflow: { repository: ghcr.io/mlflow/mlflow, tag: v3.17.1 }
+
+api:
+  replicas: 2
+  resources:
+    requests: { cpu: 200m, memory: 768Mi }
+    limits: { memory: 2Gi }
+  env:
+    DFP_RATE_LIMIT: 600/minute
+    DFP_LOG_LEVEL: INFO
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    cpuUtilization: 60
+  pdb:
+    minAvailable: 1
+
+mlflow:
+  storage: 5Gi
+  storageClass: ""
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 3Gi }
+
+# Registers the champion into the registry once MLflow is up (the image carries the data and the backtest).
+trainJob:
+  enabled: true
+
+secrets:
+  sealed: false
+  apiKeys: local-analyst-key   # DFP_API_KEYS, comma separated
+
+alerts:
+  enabled: true
