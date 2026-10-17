@@ -1,0 +1,28 @@
+{
+  "results": [
+    {
+      "experiment": "delete-all-api-pods",
+      "probes": 126,
+      "failed_probes": 26,
+      "first_failure_s_after_action": 0.88,
+      "recovery_s_after_action": 24.02,
+      "outage_s": 23.14
+    },
+    {
+      "experiment": "cordon-and-drain-node",
+      "probes": 62,
+      "failed_probes": 61,
+      "first_failure_s_after_action": 6.26,
+      "recovery_s_after_action": null,
+      "outage_s": null
+    },
+    {
+      "experiment": "uncordon-node",
+      "probes": 131,
+      "failed_probes": 38,
+      "first_failure_s_after_action": 0.63,
+      "recovery_s_after_action": 27.41,
+      "outage_s": 26.78
+    }
+  ]
+}
