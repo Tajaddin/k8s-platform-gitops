@@ -1,0 +1,54 @@
+# Argo CD for a one-node platform: no HA, insecure server behind our own ingress, Helm and Kustomize enabled.
+global:
+  domain: argocd.localtest.me
+configs:
+  params:
+    server.insecure: true
+  cm:
+    timeout.reconciliation: 60s
+    kustomize.buildOptions: --enable-helm
+    # server-side apply dry-runs report volumeClaimTemplates with apiVersion/kind/status that the live object lacks
+    resource.customizations.ignoreDifferences.apps_StatefulSet: |
+      jqPathExpressions:
+        - .spec.volumeClaimTemplates[]?.apiVersion
+        - .spec.volumeClaimTemplates[]?.kind
+        - .spec.volumeClaimTemplates[]?.status
+    resource.customizations.health.argoproj.io_Rollout: |
+      hs = {}
+      if obj.status ~= nil and obj.status.phase ~= nil then
+        if obj.status.phase == "Healthy" then hs.status = "Healthy" else hs.status = "Progressing" end
+        hs.message = obj.status.message
+        return hs
+      end
+      hs.status = "Progressing"
+      return hs
+  # charts pulled from an OCI registry must be registered, or the repo-server skips the anonymous token exchange
+  repositories:
+    bitnami-oci:
+      name: bitnami
+      url: registry-1.docker.io/bitnamicharts
+      type: helm
+      enableOCI: "true"
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+server:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  ingress:
+    enabled: false
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 1Gi }
+applicationSet:
+  enabled: false
+notifications:
+  enabled: false
+dex:
+  enabled: false
+redis:
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }

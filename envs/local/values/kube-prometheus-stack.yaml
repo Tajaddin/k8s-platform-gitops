@@ -1,0 +1,47 @@
+# One-node platform: short retention, small requests, the k3s-embedded components not scraped as separate pods.
+fullnameOverride: kps
+kubeControllerManager: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeEtcd: { enabled: false }
+kubeProxy: { enabled: false }
+prometheus:
+  prometheusSpec:
+    retention: 2d
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests: { cpu: 100m, memory: 512Mi }
+      limits: { memory: 1536Mi }
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 10m, memory: 64Mi }
+grafana:
+  adminPassword: change-me-local-only
+  defaultDashboardsEnabled: true
+  sidecar:
+    dashboards: { enabled: true, label: grafana_dashboard, labelValue: "1", searchNamespace: ALL }
+    datasources: { enabled: true }
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki.monitoring.svc:3100
+      access: proxy
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts: [grafana.localtest.me]
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+prometheusOperator:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+kube-state-metrics:
+  resources:
+    requests: { cpu: 10m, memory: 64Mi }
+prometheus-node-exporter:
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }

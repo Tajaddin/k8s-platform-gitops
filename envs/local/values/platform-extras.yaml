@@ -1,0 +1,3 @@
+issuer:
+  kind: selfsigned
+workloadNamespaces: [search, forecast]

@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: forecast
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: git://host.k3d.internal:9418/k8s-platform-gitops.git
+    targetRevision: main
+    path: charts/forecast
+    helm:
+      valueFiles:
+        - ../../envs/local/values/forecast.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: forecast
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

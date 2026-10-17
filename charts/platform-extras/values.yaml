@@ -1,0 +1,7 @@
+issuer:
+  # selfsigned for local clusters; letsencrypt for a public one (set email and the ingress class)
+  kind: selfsigned
+  email: ""
+  server: https://acme-v02.api.letsencrypt.org/directory
+# Namespaces that get a default-deny NetworkPolicy plus the allows every workload needs (DNS, monitoring scrape).
+workloadNamespaces: [search, forecast]

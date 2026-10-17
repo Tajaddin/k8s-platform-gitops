@@ -1,0 +1,20 @@
+# The one Application applied by hand: it points Argo CD at envs/<env>/apps, where every other Application
+# lives. From here on, the cluster follows git.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: default
+  source:
+    repoURL: __REPO_URL__
+    targetRevision: main
+    path: envs/__ENV__/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

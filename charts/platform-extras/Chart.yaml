@@ -1,0 +1,6 @@
+apiVersion: v2
+name: platform-extras
+description: Cluster-wide bits that belong to no upstream chart - the TLS issuer, the default-deny policy applied to every workload namespace
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
