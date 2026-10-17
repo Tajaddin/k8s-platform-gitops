@@ -1,0 +1,13 @@
+host: search.example.com   # set to a DNS name pointing at the VM before applying
+images:
+  api: { repository: ghcr.io/tajaddin/hybrid-search-service/api, tag: latest, pullPolicy: IfNotPresent }
+  ui: { repository: ghcr.io/tajaddin/hybrid-search-service/ui, tag: latest, pullPolicy: IfNotPresent }
+opensearch:
+  javaOpts: "-Xms2g -Xmx2g"
+  storage: 20Gi
+  storageClass: local-path
+data:
+  preparedHostPath: /mnt/hss-prepared
+  modelsHostPath: /mnt/hss-models
+secrets:
+  sealed: true   # commit envs/oci/secrets/search-api-secrets.yaml from scripts/seal.sh

@@ -1,0 +1,16 @@
+controller:
+  replicaCount: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  service:
+    type: LoadBalancer
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false   # the Prometheus CRDs arrive one sync wave later; the workloads ship their own monitors
+  config:
+    use-forwarded-headers: "true"
+    enable-real-ip: "true"
+  admissionWebhooks:
+    enabled: true

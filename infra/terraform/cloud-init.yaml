@@ -1,0 +1,35 @@
+#cloud-config
+# k3s without Traefik (ingress-nginx comes from Argo CD), Helm, Argo CD, and the root application for env oci.
+package_update: true
+packages: [curl, ca-certificates, git]
+write_files:
+  - path: /opt/platform/argocd-values.yaml
+    permissions: "0644"
+    content: |
+      ${indent(6, argocd_values)}
+  - path: /opt/platform/root-app.yaml
+    permissions: "0644"
+    content: |
+      ${indent(6, replace(replace(root_app, "__REPO_URL__", repo_url), "__ENV__", "oci"))}
+  - path: /opt/platform/bootstrap.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+      until kubectl get nodes >/dev/null 2>&1; do sleep 5; done
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      helm repo add argo https://argoproj.github.io/argo-helm
+      helm repo update
+      helm upgrade --install argocd argo/argo-cd --version "${argocd_version}" -n argocd --create-namespace \
+        -f /opt/platform/argocd-values.yaml --wait --timeout 15m
+      kubectl apply -f /opt/platform/root-app.yaml
+      mkdir -p /mnt/hss-prepared /mnt/hss-models
+      echo "bootstrap done" > /opt/platform/done
+runcmd:
+  - sysctl -w vm.max_map_count=262144
+  - echo vm.max_map_count=262144 >> /etc/sysctl.conf
+  - iptables -I INPUT -p tcp -m multiport --dports 80,443,6443 -j ACCEPT
+  - netfilter-persistent save || true
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${k3s_version}" INSTALL_K3S_EXEC="server --disable traefik --write-kubeconfig-mode 644" sh -
+  - /opt/platform/bootstrap.sh > /var/log/platform-bootstrap.log 2>&1

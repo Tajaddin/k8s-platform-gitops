@@ -1,0 +1,8 @@
+host: forecast.example.com
+images:
+  api: { repository: ghcr.io/tajaddin/demand-forecast-pricing/api, tag: latest, pullPolicy: IfNotPresent }
+mlflow:
+  storage: 5Gi
+  storageClass: local-path
+secrets:
+  sealed: true

@@ -1,0 +1,4 @@
+issuer:
+  kind: letsencrypt
+  email: gafarovtajaddin@gmail.com
+workloadNamespaces: [search, forecast]

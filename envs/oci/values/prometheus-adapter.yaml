@@ -1,0 +1,18 @@
+# Exposes requests per second per pod as a custom metric so the HPA can scale on traffic, not only CPU.
+prometheus:
+  url: http://kps-prometheus.monitoring.svc
+  port: 9090
+rules:
+  default: false
+  custom:
+    - seriesQuery: 'http_request_duration_seconds_count{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod: { resource: pod }
+      name:
+        matches: "^http_request_duration_seconds_count$"
+        as: "http_requests_per_second"
+      metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)'
+resources:
+  requests: { cpu: 20m, memory: 64Mi }
