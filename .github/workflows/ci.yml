@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  charts:
+    name: helm lint, template, kubeconform and conftest for every env
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with: { version: v3.17.3 }
+      - uses: azure/setup-kubectl@v4
+      - name: tools
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz -C /usr/local/bin kubeconform
+          curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | tar xz -C /usr/local/bin conftest
+      - run: for c in charts/*; do helm lint "$c"; done
+      - name: render every chart for every env and validate the manifests
+        run: |
+          mkdir -p out
+          for env in local oci; do
+            for c in charts/*; do
+              name=$(basename "$c"); vf="envs/$env/values/$name.yaml"
+              helm template "$name" "$c" -n "$name" ${vf:+$( [ -f "$vf" ] && echo -f "$vf" )} > "out/$env-$name.yaml"
+            done
+            kubectl kustomize "envs/$env/apps" > "out/$env-apps.yaml"
+          done
+          kubeconform -strict -ignore-missing-schemas -summary out/*.yaml
+          conftest test out/*.yaml -p platform/policies
+      - uses: actions/upload-artifact@v4
+        with: { name: rendered-manifests, path: out, retention-days: 7 }
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.9.8" }
+      - run: terraform -chdir=infra/terraform fmt -check
+      - run: terraform -chdir=infra/terraform init -backend=false -input=false
+      - run: terraform -chdir=infra/terraform validate
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck && shellcheck scripts/*.sh chaos/*.sh
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
