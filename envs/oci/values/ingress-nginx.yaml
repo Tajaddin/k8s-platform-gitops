@@ -9,8 +9,11 @@ controller:
     enabled: true
     serviceMonitor:
       enabled: false   # the Prometheus CRDs arrive one sync wave later; the workloads ship their own monitors
+  # Nothing sits in front of the controller, so a client's X-Forwarded-For is its own claim: trusting it would let
+  # anyone pick the address the per-IP rate limits count. Turn these on only behind a proxy that overwrites
+  # the header, with proxy-real-ip-cidr narrowed to that proxy.
   config:
-    use-forwarded-headers: "true"
-    enable-real-ip: "true"
+    use-forwarded-headers: "false"
+    enable-real-ip: "false"
   admissionWebhooks:
     enabled: true
