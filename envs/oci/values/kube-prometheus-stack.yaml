@@ -20,7 +20,10 @@ alertmanager:
     resources:
       requests: { cpu: 10m, memory: 64Mi }
 grafana:
-  adminPassword: set-via-sealed-secret-or-change-after-first-login
+  # The admin login lives in a SealedSecret (envs/oci/secrets/grafana-admin.yaml, from scripts/seal.sh), never
+  # in this file: Grafana has no persistence here, so every restart would reset it to whatever git holds.
+  admin:
+    existingSecret: grafana-admin
   defaultDashboardsEnabled: true
   sidecar:
     dashboards: { enabled: true, label: grafana_dashboard, labelValue: "1", searchNamespace: ALL }
@@ -33,7 +36,12 @@ grafana:
   ingress:
     enabled: true
     ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: platform-issuer
     hosts: [grafana.example.com]
+    tls:
+      - secretName: grafana-tls
+        hosts: [grafana.example.com]
   resources:
     requests: { cpu: 50m, memory: 128Mi }
 prometheusOperator:

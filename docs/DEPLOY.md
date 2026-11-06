@@ -30,10 +30,12 @@ after; Argo CD resumes where it was.
 3. `terraform -chdir=infra/terraform apply`. cloud-init installs k3s without Traefik, Helm, Argo CD and the
    root Application for `envs/oci`; `/var/log/platform-bootstrap.log` on the VM shows progress.
 4. Copy the P8 prepared data to the VM (`rsync -az data/prepared/ ubuntu@<ip>:/mnt/hss-prepared/`), then
-   seal the two secrets against the new cluster: fetch the kubeconfig (`terraform output kubeconfig_hint`),
-   install `kubeseal`, and run `scripts/seal.sh oci search search-api-secrets HSS_ADMIN_KEY=<value>` and
-   `scripts/seal.sh oci forecast forecast-api-secrets DFP_API_KEYS=<keys>`; commit the files under
-   `envs/oci/secrets` and reference them from the charts' extra manifests (or apply them once by hand).
+   seal the three secrets against the new cluster: fetch the kubeconfig (`terraform output kubeconfig_hint`),
+   install `kubeseal`, and run `scripts/seal.sh oci search search-api-secrets HSS_ADMIN_KEY=<value>`,
+   `scripts/seal.sh oci forecast forecast-api-secrets DFP_API_KEYS=<keys>` and
+   `scripts/seal.sh oci monitoring grafana-admin admin-user=admin admin-password=<value>`. Commit and push the
+   files under `envs/oci/secrets`; the `secrets` Application applies them, and until then the two APIs and
+   Grafana wait for their Secrets.
    Back up the controller's sealing key (`kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml`).
 5. Point DNS at the VM; cert-manager issues the certificates; open the hosts.
 6. `terraform destroy` removes the VM and the network.
