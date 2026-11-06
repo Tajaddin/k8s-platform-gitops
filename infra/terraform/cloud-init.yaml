@@ -18,7 +18,17 @@ write_files:
       set -euo pipefail
       export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
       until kubectl get nodes >/dev/null 2>&1; do sleep 5; done
-      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      # Helm from its release tarball, checked against the published SHA-256, not an installer piped from a branch.
+      HELM_VERSION=v3.17.3
+      case "$(uname -m)" in
+        aarch64) helm_arch=arm64 helm_sha=7944e3defd386c76fd92d9e6fec5c2d65a323f6fadc19bfb5e704e3eee10348e ;;
+        x86_64) helm_arch=amd64 helm_sha=ee88b3c851ae6466a3de507f7be73fe94d54cbf2987cbaa3d1a3832ea331f2cd ;;
+        *) echo "no pinned helm build for $(uname -m)" >&2; exit 1 ;;
+      esac
+      curl -fsSLo /tmp/helm.tar.gz "https://get.helm.sh/helm-$HELM_VERSION-linux-$helm_arch.tar.gz"
+      echo "$helm_sha  /tmp/helm.tar.gz" | sha256sum -c -
+      tar -xzf /tmp/helm.tar.gz -C /tmp "linux-$helm_arch/helm"
+      install -m 0755 "/tmp/linux-$helm_arch/helm" /usr/local/bin/helm
       helm repo add argo https://argoproj.github.io/argo-helm
       helm repo update
       helm upgrade --install argocd argo/argo-cd --version "${argocd_version}" -n argocd --create-namespace \
@@ -31,5 +41,5 @@ runcmd:
   - echo vm.max_map_count=262144 >> /etc/sysctl.conf
   - iptables -I INPUT -p tcp -m multiport --dports 80,443,6443 -j ACCEPT
   - netfilter-persistent save || true
-  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${k3s_version}" INSTALL_K3S_EXEC="server --disable traefik --write-kubeconfig-mode 644" sh -
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${k3s_version}" INSTALL_K3S_EXEC="server --disable traefik --write-kubeconfig-mode 600" sh -
   - /opt/platform/bootstrap.sh > /var/log/platform-bootstrap.log 2>&1
