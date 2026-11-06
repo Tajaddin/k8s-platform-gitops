@@ -1,7 +1,9 @@
 host: search.example.com   # set to a DNS name pointing at the VM before applying
+# Immutable sha-<commit> tags from the service repository's images workflow. Deploying a new build is a change
+# to these tags: that is what makes Argo CD sync and the canary run; a moving :latest changes nothing in git.
 images:
-  api: { repository: ghcr.io/tajaddin/hybrid-search-service/api, tag: latest, pullPolicy: IfNotPresent }
-  ui: { repository: ghcr.io/tajaddin/hybrid-search-service/ui, tag: latest, pullPolicy: IfNotPresent }
+  api: { repository: ghcr.io/tajaddin/hybrid-search-service/api, tag: sha-08d4e01, pullPolicy: IfNotPresent }
+  ui: { repository: ghcr.io/tajaddin/hybrid-search-service/ui, tag: sha-08d4e01, pullPolicy: IfNotPresent }
 opensearch:
   javaOpts: "-Xms2g -Xmx2g"
   storage: 20Gi

@@ -1,6 +1,7 @@
 host: forecast.example.com
+# Immutable sha-<commit> tag from the service repository's images workflow; deploy a new build by changing it.
 images:
-  api: { repository: ghcr.io/tajaddin/demand-forecast-pricing/api, tag: latest, pullPolicy: IfNotPresent }
+  api: { repository: ghcr.io/tajaddin/demand-forecast-pricing/api, tag: sha-ba497cf, pullPolicy: IfNotPresent }
 mlflow:
   storage: 5Gi
   storageClass: local-path
