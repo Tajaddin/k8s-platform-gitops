@@ -21,9 +21,10 @@ platform also needs guard rails that catch mistakes before a sync, not after.
 - **Pod security baseline** enforced per namespace by label, non-root containers with dropped
   capabilities, requests and limits everywhere.
 - **CI renders every chart for every environment** and runs `kubeconform` (schema) and `conftest` with
-  Rego policies: requests and memory limits present, no `:latest` or untagged images, non-root for the
-  APIs, an ingress class on every Ingress, no NodePort services. `conftest verify` runs a unit test for
-  each rule against manifests shaped like Helm's output.
+  Rego policies: requests and memory limits present, no `:latest` or untagged images, non-root for every
+  workload unless a `platform/runs-as-root` annotation on it says why (the UI's nginx and MLflow), an
+  ingress class on every Ingress, no NodePort services. `conftest verify` runs a unit test for each rule
+  against manifests shaped like Helm's output.
 
 ## Consequences
 

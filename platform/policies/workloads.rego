@@ -35,11 +35,12 @@ deny contains msg if {
 	msg := sprintf("%s/%s container %s uses :latest or no tag; pin a version or a digest", [input.kind, input.metadata.name, c.name])
 }
 
+# Every workload runs as non-root unless a platform/runs-as-root annotation on it says why it cannot.
 deny contains msg if {
-	input.kind in {"Deployment", "Rollout"}
-	input.metadata.labels["app.kubernetes.io/name"] in {"search-api", "forecast-api"}
+	is_workload(input.kind)
 	not input.spec.template.spec.securityContext.runAsNonRoot
-	msg := sprintf("%s/%s must run as non-root", [input.kind, input.metadata.name])
+	not input.metadata.annotations["platform/runs-as-root"]
+	msg := sprintf("%s/%s must run as non-root, or say why in a platform/runs-as-root annotation", [input.kind, input.metadata.name])
 }
 
 deny contains msg if {

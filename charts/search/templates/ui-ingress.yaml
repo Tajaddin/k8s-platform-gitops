@@ -17,6 +17,8 @@ metadata:
   labels:
     app.kubernetes.io/name: search-ui
     {{- include "search.labels" . | nindent 4 }}
+  annotations:
+    platform/runs-as-root: "the stock nginx image renders its config and binds :80 as root, then drops to the nginx user for workers"
 spec:
   replicas: {{ .Values.ui.replicas }}
   selector:
@@ -37,6 +39,7 @@ spec:
           readinessProbe:
             httpGet: { path: /, port: 80 }
             periodSeconds: 10
+          securityContext: { allowPrivilegeEscalation: false }
 ---
 # "api" inside the namespace resolves to the stable API service, which is what the UI image's nginx expects.
 apiVersion: v1

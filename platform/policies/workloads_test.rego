@@ -70,13 +70,22 @@ test_versions_and_digests_pass if {
 	}
 }
 
-test_api_without_run_as_non_root_is_denied if {
-	api := {
-		"kind": "Rollout",
-		"metadata": {"name": "search-api", "labels": {"app.kubernetes.io/name": "search-api"}},
-		"spec": {"template": {"spec": {"containers": [app("hss/api:local", sized)]}}},
+test_workload_without_run_as_non_root_is_denied if {
+	opensearch := {
+		"kind": "StatefulSet",
+		"metadata": {"name": "opensearch"},
+		"spec": {"template": {"spec": {"securityContext": {"fsGroup": 1000}, "containers": [app("opensearch:2.19.1", sized)]}}},
 	}
-	"Rollout/search-api must run as non-root" in deny with input as api
+	"StatefulSet/opensearch must run as non-root, or say why in a platform/runs-as-root annotation" in deny with input as opensearch
+}
+
+test_root_workload_with_a_stated_reason_passes if {
+	ui := {
+		"kind": "Deployment",
+		"metadata": {"name": "ui", "annotations": {"platform/runs-as-root": "nginx binds :80 as root"}},
+		"spec": {"template": {"spec": {"containers": [app("nginx:1.27", sized)]}}},
+	}
+	count(deny) == 0 with input as ui
 }
 
 test_host_path_volume_is_denied if {
