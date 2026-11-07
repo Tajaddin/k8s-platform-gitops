@@ -13,3 +13,4 @@ resources:
   - prometheus-adapter.yaml
   - forecast.yaml
   - search.yaml
+  - secrets.yaml

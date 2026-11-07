@@ -24,6 +24,7 @@ spec:
         - name: wait-for-mlflow
           image: curlimages/curl:8.12.1
           command: ["sh", "-c", "until curl -fsS http://mlflow:5000/health; do sleep 5; done"]
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
       containers:
         - name: train
           image: {{ .Values.images.api.repository }}:{{ .Values.images.api.tag }}
@@ -38,6 +39,7 @@ spec:
           resources:
             requests: { cpu: 500m, memory: 1Gi }
             limits: { memory: 3Gi }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

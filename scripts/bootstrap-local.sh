@@ -16,9 +16,11 @@ push_local() {
   [ -d "$GIT_DIR/k8s-platform-gitops.git" ] || git init --bare -q "$GIT_DIR/k8s-platform-gitops.git"
   if ! docker ps --format '{{.Names}}' | grep -q '^gitops-daemon$'; then
     docker rm -f gitops-daemon >/dev/null 2>&1 || true
-    # alpine/git lacks git-daemon; a plain Alpine with the two packages is the smallest image that has it
+    # alpine/git lacks git-daemon; a plain Alpine with the two packages is the smallest image that has it.
+    # Read-only: pushes go to the bare repository by path, and a daemon that accepted them would let anyone
+    # who can reach port 9418 change what Argo CD syncs.
     MSYS_NO_PATHCONV=1 docker run -d --name gitops-daemon -p 9418:9418 -v "$GIT_DIR:/repos" alpine:3.21 \
-      sh -c "apk add --no-cache git git-daemon >/dev/null && exec git daemon --base-path=/repos --export-all --reuseaddr --verbose --enable=receive-pack" >/dev/null
+      sh -c "apk add --no-cache git git-daemon >/dev/null && exec git daemon --base-path=/repos --export-all --reuseaddr --verbose" >/dev/null
   fi
   git remote get-url local >/dev/null 2>&1 || git remote add local "$GIT_DIR/k8s-platform-gitops.git"
   git -c user.name="Tajaddin Gafarov" -c user.email="gafarovtajaddin@gmail.com" push -q local HEAD:main --force

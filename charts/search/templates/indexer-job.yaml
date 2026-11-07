@@ -24,6 +24,7 @@ spec:
         - name: wait-for-opensearch
           image: curlimages/curl:8.12.1
           command: ["sh", "-c", "until curl -fsS http://opensearch:9200/_cluster/health; do sleep 5; done"]
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
       containers:
         - name: indexer
           image: {{ include "search.image" .Values.images.api }}
@@ -34,6 +35,7 @@ spec:
           resources:
             requests: { cpu: 500m, memory: 1Gi }
             limits: { memory: 3Gi }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           volumeMounts:
             - { name: prepared, mountPath: /data/prepared, readOnly: true }
             - { name: models, mountPath: /data/models }

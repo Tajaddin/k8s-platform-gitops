@@ -28,6 +28,8 @@ metadata:
   name: mlflow
   labels:
     app.kubernetes.io/name: mlflow
+  annotations:
+    platform/runs-as-root: "the mlflow image has no non-root user, and the SQLite store and artifacts on its volume are root-owned"
 spec:
   replicas: 1
   strategy: { type: Recreate }
@@ -50,6 +52,7 @@ spec:
             httpGet: { path: /health, port: 5000 }
             initialDelaySeconds: 10
             periodSeconds: 10
+          securityContext: { allowPrivilegeEscalation: false }
           volumeMounts:
             - { name: data, mountPath: /mlflow }
       volumes:

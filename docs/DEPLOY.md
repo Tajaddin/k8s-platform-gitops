@@ -23,17 +23,20 @@ after; Argo CD resumes where it was.
 1. The same OCI API key setup as P8 (`docs/DEPLOY.md` there). `cp infra/terraform/terraform.tfvars.example
    infra/terraform/terraform.tfvars`, fill in tenancy, user, fingerprint, key path, compartment, your SSH
    public key and your address as `admin_cidr`.
-2. The cloud overlay (`envs/oci`) pulls the service images from GHCR: push the P6 and P8 images there first
-   (`make deploy` in P8 does; for P6 build and push `ghcr.io/<you>/demand-forecast-pricing/api`). Set the
+2. The cloud overlay (`envs/oci`) pulls the service images from GHCR by immutable `sha-<commit>` tags: push
+   the P6 and P8 images there first (`make deploy` in P8 does; for P6 build and push
+   `ghcr.io/<you>/demand-forecast-pricing/api`) and set their tags in `envs/oci/values`. Set the
    hosts in `envs/oci/values/*.yaml` to DNS names that point at the VM, and the Let's Encrypt e-mail in
    `platform-extras.yaml`. Commit and push this repository to GitHub, because Argo CD on the VM follows it.
 3. `terraform -chdir=infra/terraform apply`. cloud-init installs k3s without Traefik, Helm, Argo CD and the
    root Application for `envs/oci`; `/var/log/platform-bootstrap.log` on the VM shows progress.
 4. Copy the P8 prepared data to the VM (`rsync -az data/prepared/ ubuntu@<ip>:/mnt/hss-prepared/`), then
-   seal the two secrets against the new cluster: fetch the kubeconfig (`terraform output kubeconfig_hint`),
-   install `kubeseal`, and run `scripts/seal.sh oci search search-api-secrets HSS_ADMIN_KEY=<value>` and
-   `scripts/seal.sh oci forecast forecast-api-secrets DFP_API_KEYS=<keys>`; commit the files under
-   `envs/oci/secrets` and reference them from the charts' extra manifests (or apply them once by hand).
+   seal the three secrets against the new cluster: fetch the kubeconfig (`terraform output kubeconfig_hint`),
+   install `kubeseal`, and run `scripts/seal.sh oci search search-api-secrets HSS_ADMIN_KEY=<value>`,
+   `scripts/seal.sh oci forecast forecast-api-secrets DFP_API_KEYS=<keys>` and
+   `scripts/seal.sh oci monitoring grafana-admin admin-user=admin admin-password=<value>`. Commit and push the
+   files under `envs/oci/secrets`; the `secrets` Application applies them, and until then the two APIs and
+   Grafana wait for their Secrets.
    Back up the controller's sealing key (`kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml`).
 5. Point DNS at the VM; cert-manager issues the certificates; open the hosts.
 6. `terraform destroy` removes the VM and the network.
@@ -43,5 +46,7 @@ The A1 shape is popular; if the region reports no capacity, try another availabi
 ## What is not automated
 
 - Pushing images to GHCR for P6 (P8's deploy script does its own).
+- Bumping the image tags in `envs/oci/values` after a new build; each bump is a commit, and the search API
+  rolls out as a canary.
 - Chart version bumps inside the Application manifests.
 - A CI job that applies Terraform: it needs the OCI key as a GitHub secret.

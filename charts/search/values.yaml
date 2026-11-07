@@ -17,7 +17,9 @@ api:
   env:
     HSS_RATE_LIMIT: 600/minute
     HSS_CORS_ORIGINS: https://search.localtest.me
-    HSS_FORWARDED_ALLOW_IPS: "*"
+    # X-Forwarded-For is honoured only from k3s's pod network: network policy admits the ingress controller,
+    # the UI and Prometheus, and the controller sets the header from the connection, not from the client.
+    HSS_FORWARDED_ALLOW_IPS: 10.42.0.0/16
     HF_HUB_OFFLINE: "1"
     OMP_NUM_THREADS: "2"
   # Argo Rollouts canary: traffic weights through the ingress-nginx traffic router, each step gated by analysis.

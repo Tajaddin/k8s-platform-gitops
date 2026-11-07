@@ -35,7 +35,7 @@ spec:
           readinessProbe:
             exec: { command: ["redis-cli", "ping"] }
             periodSeconds: 5
-          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

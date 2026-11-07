@@ -21,6 +21,7 @@ validate: render
 	kubeconform -strict -ignore-missing-schemas -summary out/*.yaml
 
 policy: render
+	conftest verify -p platform/policies
 	conftest test out/*.yaml -p platform/policies
 
 tf-validate:

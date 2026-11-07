@@ -19,19 +19,28 @@ deny contains msg if {
 	msg := sprintf("%s/%s container %s has no memory limit", [input.kind, input.metadata.name, c.name])
 }
 
-deny contains msg if {
-	some c in containers(input)
-	endswith(c.image, ":latest")
-	input.metadata.namespace != "monitoring"
-	not startswith(c.image, "ghcr.io/tajaddin/")
-	msg := sprintf("%s/%s container %s uses a :latest tag", [input.kind, input.metadata.name, c.name])
+# A tag that moves (latest, or none at all) changes what runs without a change in git, so Argo CD never syncs
+# and a canary never runs. A version tag or a digest pins the image.
+floating(image) if endswith(image, ":latest")
+
+floating(image) if {
+	not contains(image, "@")
+	path := split(image, "/")
+	not contains(path[count(path) - 1], ":")
 }
 
 deny contains msg if {
-	input.kind in {"Deployment", "Rollout"}
-	input.metadata.labels["app.kubernetes.io/name"] in {"search-api", "forecast-api"}
+	some c in containers(input)
+	floating(c.image)
+	msg := sprintf("%s/%s container %s uses :latest or no tag; pin a version or a digest", [input.kind, input.metadata.name, c.name])
+}
+
+# Every workload runs as non-root unless a platform/runs-as-root annotation on it says why it cannot.
+deny contains msg if {
+	is_workload(input.kind)
 	not input.spec.template.spec.securityContext.runAsNonRoot
-	msg := sprintf("%s/%s must run as non-root", [input.kind, input.metadata.name])
+	not input.metadata.annotations["platform/runs-as-root"]
+	msg := sprintf("%s/%s must run as non-root, or say why in a platform/runs-as-root annotation", [input.kind, input.metadata.name])
 }
 
 deny contains msg if {
